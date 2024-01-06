@@ -1,6 +1,7 @@
 import numpy as np
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import hickle as hkl
 
 
 def one_hot(seq):
@@ -30,33 +31,42 @@ class Seq2Ab(Dataset):
         self.label = None
         self.label_value = "float"
 
-    def onehot_process_seq(self, mode):
-        """
-        sequence type: list
-        :return:
-        """
-        seq_num = len(self.sequence)
-        seq_len = 2114
+    def load_data_hkl(self, input_files):
+        self.data = {}
+        ProgressBar = tqdm(input_files)
+        for input_file in ProgressBar:
+            ProgressBar.set_description("Loading file %s" % input_file)
+            loaded_data = hkl.load(input_file)
 
-        self.sequences = np.empty(shape=(seq_num, seq_len, 4), dtype=np.int8)
-        for i in tqdm(range(seq_num), postfix="data loading"):
-            self.sequences[i] = one_hot(self.sequence[i])
-        self.sequences = np.transpose(self.sequences, [0, 2, 1])
-        np.save('performance/sequences/' + mode + '_sequences.npy', self.sequences)
+            # Iterate through keys in the loaded_data dictionary
+            for key in loaded_data.keys():
+                if key in self.data:
+                    # Append along the common dimension (axis=0)
+                    self.data[key] = np.concatenate((self.data[key], loaded_data[key]), axis=0)
+                else:
+                    # If the key is not present, add it to self.data
+                    self.data[key] = loaded_data[key]
+        print('Hkl loading done!')
 
-    def process_label(self):
-        self.labels = np.array(self.label, dtype=np.float32)
-        if self.label_value == "binary":
-            self.labels[self.labels > 1] = 1
+    def set_input_and_target(self, indices):
+        self.data = {key: value[indices] for key, value in self.data.items()}
+        x = self.data['mat']
+        x_kspec = self.data['kmer']
 
-    def __getitem__(self, index):
-        cur_sequence = self.sequences[index]
-        cur_label = self.labels[index]
-        return cur_sequence, cur_label
+        x_kspec = x_kspec.reshape((x_kspec.shape[0], 1024, 4))
+        x = np.concatenate((x, x_kspec), axis=1)
+        x = x[:, np.newaxis]
+        self.x = x.transpose((0, 1, 3, 2))
+        self.labels = self.data['y']
+        print('Data loading done!')
+
+    def __getitem__(self, item):
+        cur_x = self.x[item]
+        cur_label = self.labels[item]
+        return cur_x, cur_label
 
     def __len__(self):
-        sample_num = len(self.sequence)
-        return sample_num
+        return len(self.x)
 
 
 class SampleLoader:

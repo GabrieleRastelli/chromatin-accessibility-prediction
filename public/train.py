@@ -23,31 +23,32 @@ class Builder:
         self.cwd = "performance"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        if torch.cuda.device_count() > 1:
-            print("Using", torch.cuda.device_count(), "GPUs!")
-            self.model = DataParallel(model)  # Wrap the model with DataParallel
-        else:
-            self.model = model
-
+        self.model = model
         self.model_name = model_name
 
         pretrained_model_path = self.cwd + "/pth/" + self.model_name + ".pth"
         if os.path.exists(pretrained_model_path):
-            print('Continuing training from pretrained model...')
-            self.model.load_state_dict(torch.load(pretrained_model_path,
-                                                  map_location=self.device))
+            print('Loading pretrained model...')
+            saved_state_dict = torch.load(pretrained_model_path, map_location=self.device)
+            filtered_state_dict = {k: v for k, v in saved_state_dict.items() if
+                                   k in model.state_dict() and v.shape == model.state_dict()[k].shape}
+            self.model.load_state_dict(filtered_state_dict, strict=False)
+
+        if torch.cuda.device_count() > 1:
+            print("Using", torch.cuda.device_count(), "GPUs!")
+            self.model = DataParallel(self.model)  # Wrap the model with DataParallel
 
         self.model = self.model.to(device=self.device)
         self.model_name = model_name
         self.optimizer = optim.Adam(self.model.parameters(),
-                                    lr=0.001)
+                                    lr=0.0001)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,
                                                               patience=3,
                                                               verbose=True)
         self.loss_function = nn.MSELoss()
 
-        self.batch_size = 8
-        self.epochs = 4
+        self.batch_size = 32
+        self.epochs = 50
         self.learn_loader = None
         self.val_loader = None
         self.infer_loader = None
@@ -59,7 +60,7 @@ class Builder:
         :param val_loader:
         :return:
         """
-        early_stopping = EarlyStopping(patience=10,
+        early_stopping = EarlyStopping(patience=5,
                                        verbose=True)
         for epoch in range(self.epochs):
             self.model.train()
@@ -69,7 +70,8 @@ class Builder:
 
                 ProgressBar.set_description("Learning_Epoch %d" % epoch)
                 sequence, label = sample
-                sequence, label = sequence.to(self.device), label.to(self.device)  # Ensure data is on the correct device
+                sequence, label = sequence.to(self.device), label.to(
+                    self.device)  # Ensure data is on the correct device
                 y = self.model(sequence.float())
 
                 loss = self.loss_function(y, label.float())
@@ -83,7 +85,8 @@ class Builder:
             self.model.eval()
             with torch.no_grad():
                 for val_sequence, val_label in val_loader:
-                    val_sequence, val_label = val_sequence.to(self.device), val_label.to(self.device)  # Ensure data is on the correct device
+                    val_sequence, val_label = val_sequence.to(self.device), val_label.to(
+                        self.device)  # Ensure data is on the correct device
                     val_y = self.model(val_sequence.float())
                     val_label = val_label.float()
 
@@ -128,7 +131,7 @@ class Builder:
                                     save_alldata=self.cwd + '/index_batch/' + self.model_name + '_performance.index')
 
             evaluation.measure_accessibility_prediction(y_label=y_label,
-                                                      ground_label=ground_label)
+                                                        ground_label=ground_label)
 
     def __call__(self, mode):
         if mode not in ["learn", "infer", "all"]:

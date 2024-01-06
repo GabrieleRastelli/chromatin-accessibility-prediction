@@ -1,12 +1,6 @@
-import pandas as pd
 from torch.utils.data import DataLoader
-
 from public.loader import Seq2Ab, SampleLoader
-
 import os.path
-
-import pyfaidx
-
 import numpy as np
 
 
@@ -14,38 +8,23 @@ class MyDataset(Seq2Ab):
     def __init__(self, mode):
         super(MyDataset, self).__init__()
 
-        self.all_regions = self._load_bed_file('/work/tesi_grastelli/data/processed/consensus_peaks_inputs.bed')
-        self.genomic_pyfasta = pyfaidx.Fasta(
-            '/work/tesi_grastelli/data/raw/genome.fa', sequence_always_upper=True
-        )
+        self.all_regions = self._load_bed_file('data/processed/consensus_peaks_inputs.bed')
 
         self.split_dict = {"val": ["chr8", "chr10"], "infer": ["chr9", "chr18"]}
 
-        if os.path.exists('performance/sequences/' + mode + '_sequences.npy'):
-            self.sequences = np.load('performance/sequences/' + mode + '_sequences.npy')
-        else:
-            # Get indices for each set type
-            indices = self._get_indices_for_set_type(
-                self.split_dict, mode, self.all_regions, 1.0
-            )
-            self.sequence = []
-            for idx in indices:
-                region = self.all_regions[idx]
-                chrom, start, end = region
-                sequence = str(self.genomic_pyfasta[chrom][start:end].seq)
-                self.sequence.append(sequence)
-            super().onehot_process_seq(mode)
-
-        self.label = np.load('/work/tesi_grastelli/data/processed/targets.npy')
-        super().process_label()
+        indices = self._get_indices_for_set_type(
+            self.split_dict, mode, self.all_regions, 1.0
+        )
+        super().load_data_hkl(sorted([os.path.join('data/processed', f) for f in os.listdir('data/processed') if f.endswith('.hkl')]))
+        super().set_input_and_target(indices)
 
     def __getitem__(self, item):
-        cur_sequence = self.sequences[item]
-        cur_label = self.labels[1][item]
-        return cur_sequence, cur_label
+        cur_x = self.x[item]
+        cur_label = self.labels[item]
+        return cur_x, cur_label
 
     def __len__(self):
-        return len(self.sequences)
+        return len(self.x)
 
     def _get_indices_for_set_type(
         self, split_dict: dict, set_type: str, all_regions: list, fraction_of_data=1.0

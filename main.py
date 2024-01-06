@@ -1,6 +1,6 @@
 import torch
 
-from public.model import Protrait
+from public.deopen import DeopenRegressionModel
 from dataset import MyDataLoader
 from public.train import Builder
 
@@ -32,7 +32,7 @@ class MyBuilder(Builder):
 
 
 if __name__ == "__main__":
-    model = Protrait(seq_len=2114)
-    builder = MyBuilder(model, model_name="protrait")
-    builder.batch_size = 8
+    model = DeopenRegressionModel()
+    builder = MyBuilder(model, model_name="deopen")
+    builder.batch_size = 32
     builder.__call__(mode="infer")
