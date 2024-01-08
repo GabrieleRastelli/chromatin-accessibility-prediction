@@ -15,6 +15,15 @@ class DeopenRegressionModel(nn.Module):
         kernel2 = 128
         kernel3 = 128
         num_cells = 19
+
+        self.transformer_layer = nn.TransformerEncoderLayer(
+            d_model=3138,
+            nhead=6,
+            dim_feedforward=512,
+            dropout=0.1,
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(self.transformer_layer, num_layers=2)
         self.layer1 = nn.Conv2d(1, 1, kernel_size=(1, 1))
         self.layer2_f = nn.Flatten()
         self.layer3 = nn.Conv2d(1, kernel1, kernel_size=(4, test_size1))
@@ -30,14 +39,18 @@ class DeopenRegressionModel(nn.Module):
         self.layer13 = nn.Conv2d(kernel3, kernel3, kernel_size=(1, test_size3))
         self.layer14 = nn.MaxPool2d(kernel_size=(1, pool_size))
         self.layer14_d = nn.Linear(256, 256)
-        self.layer17 = nn.Linear(384, 256)
+        self.layer16_d = nn.Linear(12552, 256)
+        self.layer17 = nn.Linear(640, 256)
         self.network = nn.Linear(256, num_cells)
 
     def forward(self, x):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+        x_transformer = x.squeeze(1)
+        transformer_output = self.transformer(x_transformer)
+        transformer_output = transformer_output.unsqueeze(1)
+
         # Forward pass through the layers
-        x = x.to(device)
         x = self.layer1(x)
         layer2_1 = x.narrow(-1, 0, self.l)
         layer2_2 = x.narrow(-1, self.l, x.size(-1) - self.l)
@@ -68,8 +81,11 @@ class DeopenRegressionModel(nn.Module):
         replicated_layer14_d = collapsed_layer14_d.repeat(layer3_2.shape[0], 1)
         layer15 = torch.cat([replicated_layer14_d, layer3_2], dim=1)
 
+        layer16_d = F.relu(self.layer16_d(transformer_output.view(transformer_output.size(0), -1)))
+        layer16_d = torch.cat([layer15, layer16_d], dim=1)
+
         # Layer 17
-        layer17 = F.relu(self.layer17(layer15))
+        layer17 = F.relu(self.layer17(layer16_d))
 
         # Output layer
         network_output = self.network(layer17)
